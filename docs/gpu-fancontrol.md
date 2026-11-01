@@ -20,8 +20,31 @@ GPU still protects itself.
   **Minimum 40 % (750 RPM)**: at ~600 RPM the BMC fail-safe sends every fan to 100 %.
 - **Up at once, down slowly:** at most −5 % per 10 s, and only if the duty for T + 3 °C is lower too
   (hysteresis). BMC writes are slow (applied in 20–60 s) and rate-limited.
-- If the BMC loses the `gpufan` mode (e.g. after a BMC reset), the daemon re-applies it. If the BMC
-  IP changed (DHCP), it finds it again with `ipmitool lan print 1`.
+- The BMC IP comes from the BMC itself (`ipmitool lan print 1`, in-band over KCS) on every connection,
+  so DHCP changes don't matter. `BMC_HOST` in `bmc.env` is only a fallback, and the password is never
+  sent to an old address that may now belong to another device. The current IP is written to
+  `/run/gpu-fancontrol/bmc_host`, which `tools/bmc.py` reads.
+
+## Surviving a BMC factory reset (power cut)
+
+After a power cut, this BMC (firmware 13.02.10) came back with **factory settings**: default
+password, only the `default` fan profile, and a new DHCP address. The first version of the daemon
+then failed every login, and systemd restarted it 120+ times (two logins every 5 s). The daemon now
+recovers on its own:
+
+| Problem | What the daemon does |
+|---|---|
+| Login returns HTTP 401 | Sets the `bmc.env` password again in-band (`ipmitool user set password`, root, no BMC credentials needed), at most once an hour |
+| `gpufan` profile missing | Recreates it from `/etc/gpu-fancontrol/gpufan.json` and activates it |
+| `gpufan` not the active mode | Re-activates it (checked every 60 s) |
+| BMC unreachable | Keeps running (temperatures, watchdog) and retries the login after 30 s, 60 s, 120 s, then every 5 min |
+| Daemon crash loop | systemd `RestartSteps`/`RestartMaxDelaySec`: restart delay grows from 5 s to 5 min |
+
+The 401s came from the factory password, but many BMCs also lock an account after repeated failed
+logins, so retry loops that log in every few seconds are worth avoiding anyway.
+
+The in-band password reset passes the password to `ipmitool` on its command line, so it is visible for
+a moment in the process list to local users. Acceptable on a single-user machine.
 
 ## Safety
 
@@ -47,7 +70,9 @@ process, so it is not a valid crash test. Kill only the main PID:
 ## Install
 
 Needs `python3-pynvml`, `ipmitool`, and the profile `gpufan` on the BMC (its first policy must be the
-fixed duty for SYS_FAN4/5, see [bmc-fans.md](bmc-fans.md)). BMC credentials go in
+fixed duty for SYS_FAN4/5, see [bmc-fans.md](bmc-fans.md)). `install.sh` also copies
+[examples/gpufan.json](../examples/gpufan.json), the full profile used here (sensor and fan numbers are
+for the MC62-G40), so the daemon can recreate it. BMC credentials go in
 `~/.config/gpu-fancontrol/bmc.env` (see [examples/bmc.env.example](../examples/bmc.env.example)).
 
 ```bash

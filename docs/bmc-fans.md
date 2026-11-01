@@ -86,6 +86,12 @@ A copy of `default` without the case fans in the factory rules, plus:
 
 ## Notes
 
+- **A power cut reset this BMC to factory settings** (13.02.10): default password, custom fan profiles
+  gone, new DHCP address. Keep a copy of your profile (`tools/bmc.py profiles`) and the password in a
+  file. Recovery from the host, without BMC credentials:
+  `sudo ipmitool user list 1`, then `sudo ipmitool user set password <id> '<password>'` and
+  `sudo ipmitool user enable <id>`. [`gpu-fancontrol`](gpu-fancontrol.md) does both automatically.
+
 - Without the dedicated management LAN port (MLAN) cabled, the BMC used NC-SI and the host could
   not reach it.
 - The Redfish Host Interface (`usb0`, BMC at 169.254.0.17) only appears with

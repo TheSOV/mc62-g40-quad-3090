@@ -2,6 +2,7 @@
 Description=GPU case fan control through the BMC (SYS_FAN4/5 from GPU temperatures)
 After=network-online.target nvidia-persistenced.service
 Wants=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=notify
@@ -11,6 +12,13 @@ ExecStart=/usr/bin/python3 -I /opt/gpu-fancontrol/gpu_fancontrol.py
 ExecStopPost=/usr/bin/python3 -I /opt/gpu-fancontrol/gpu_fancontrol.py --failsafe
 Restart=always
 RestartSec=5
+# A crash loop must not hammer the BMC with logins (failed logins lock the account):
+# restart delay grows from 5 s to 5 min.
+RestartSteps=6
+RestartMaxDelaySec=300
+# /run/gpu-fancontrol/bmc_host: current BMC IP for the CLI tools
+RuntimeDirectory=gpu-fancontrol
+RuntimeDirectoryMode=0755
 WatchdogSec=120
 TimeoutStopSec=60
 

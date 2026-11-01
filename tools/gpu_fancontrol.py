@@ -19,6 +19,7 @@ Usage:
   gpu_fancontrol.py --failsafe      set the failsafe duty once and exit
 Config: /etc/gpu-fancontrol/config.toml (optional; defaults below).
 """
+import json
 import os
 import re
 import signal
@@ -27,6 +28,7 @@ import subprocess
 import sys
 import time
 import tomllib
+import urllib.error
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bmc
@@ -34,6 +36,7 @@ import gputemps
 import pynvml as nv
 
 CONFIG_FILE = "/etc/gpu-fancontrol/config.toml"
+PROFILE_FILE = "/etc/gpu-fancontrol/gpufan.json"   # full BMC profile, recreated if the BMC loses it
 DEFAULTS = {
     "interval_s": 2,              # read cycle
     "min_write_interval_s": 10,   # BMC writes are slow (applied in 20-60 s)
@@ -94,38 +97,75 @@ def discover_bmc_host():
     return m.group(1) if m else None
 
 
+def restore_bmc_password(user, password):
+    """Set the BMC user's password in-band (KCS, root, no BMC credentials needed).
+    Used after a factory reset of the BMC, which brings back the default password."""
+    out = subprocess.run(["ipmitool", "user", "list", "1"], capture_output=True, text=True, timeout=20).stdout
+    uid = next((line.split()[0] for line in out.splitlines()[1:]
+                if len(line.split()) > 1 and line.split()[1] == user), None)
+    if uid is None:
+        raise RuntimeError(f"BMC user '{user}' not found in 'ipmitool user list 1'")
+    size = ["20"] if len(password) > 16 else []
+    subprocess.run(["ipmitool", "user", "set", "password", uid, password, *size],
+                   check=True, capture_output=True, timeout=20)
+    subprocess.run(["ipmitool", "user", "enable", uid], check=True, capture_output=True, timeout=20)
+    log(f"BMC password for user id {uid} restored from bmc.env (in-band)")
+
+
 class Fans:
     """BMC side: connect (rediscovering the IP if needed) and set the gpufan fixed duty."""
 
     def __init__(self, dry_run=False):
         self.dry_run, self.b, self.duty, self.t_write = dry_run, None, None, 0
+        self.t_pw_fix = 0
 
     def connect(self):
+        """One login attempt. The IP comes from the BMC itself (ipmitool over KCS), so the
+        credentials are never sent to an old DHCP address that may now belong to another device.
+        bmc.env's BMC_HOST is only used if ipmitool cannot answer."""
         env = bmc.load_env()
-        hosts = [env["BMC_HOST"]]
+        host = None
         try:
-            found = discover_bmc_host()
-            if found and found not in hosts:
-                hosts.append(found)
+            host = discover_bmc_host()
         except Exception as ex:
             log("ipmitool discovery failed:", ex)
-        last = None
-        for h in hosts:
-            try:
-                self.b = bmc.BMCWeb(h, env["BMC_USER"], env["BMC_PASS"])
-                if h != env["BMC_HOST"]:
-                    log(f"BMC found at {h} (bmc.env says {env['BMC_HOST']})")
-                return
-            except Exception as ex:
-                last = ex
-        raise RuntimeError(f"cannot reach the BMC at {hosts}: {last}")
+        if not host:
+            host = env["BMC_HOST"]
+            log(f"using BMC_HOST from bmc.env: {host}")
+        elif host != env["BMC_HOST"]:
+            log(f"BMC is at {host} (bmc.env says {env['BMC_HOST']})")
+        self.b = None
+        try:
+            self.b = bmc.BMCWeb(host, env["BMC_USER"], env["BMC_PASS"])
+        except urllib.error.HTTPError as ex:
+            # 401 after a power cut = BMC back to factory password. Fix it in-band, at most once an hour.
+            if ex.code != 401 or time.time() - self.t_pw_fix < 3600:
+                raise
+            self.t_pw_fix = time.time()
+            restore_bmc_password(env["BMC_USER"], env["BMC_PASS"])
+            time.sleep(5)
+            self.b = bmc.BMCWeb(host, env["BMC_USER"], env["BMC_PASS"])
+        try:  # share the current IP with the CLI tools (bmc.load_env reads it)
+            with open(bmc.HOST_FILE, "w") as f:
+                f.write(host + "\n")
+        except OSError:
+            pass
 
     def ensure_mode(self):
+        """Keep the 'gpufan' profile present and active. A power cut can reset the BMC to factory
+        settings (seen 2026-11-01: password, IP and custom profiles lost), so a missing profile
+        is recreated from PROFILE_FILE."""
         if self.dry_run:
             return
-        if self.b.mode() != bmc.PROFILE:
-            log(f"BMC mode was not '{bmc.PROFILE}': re-applying")
-            self.b.set_mode(bmc.PROFILE)
+        if self.b.mode() == bmc.PROFILE:
+            return
+        if not any(p.get("strName") == bmc.PROFILE for p in self.b.profiles()):
+            with open(PROFILE_FILE) as f:
+                prof = json.load(f)
+            log(f"BMC has no '{bmc.PROFILE}' profile (factory reset?): recreating it from {PROFILE_FILE}")
+            self.b.call("POST", "/api/settings/fanprofile/collection", prof)
+        log(f"BMC mode was not '{bmc.PROFILE}': re-applying")
+        self.b.set_mode(bmc.PROFILE)
 
     def current(self):
         prof = self.b.profile(bmc.PROFILE)
@@ -165,6 +205,26 @@ def demand(cfg, temps, offset=0):
     return max(cfg["min_duty"], min(100, best)), why
 
 
+class Backoff:
+    """Retry delays for BMC logins: 30 s, 60 s, 120 s, then every 300 s."""
+    STEPS = [30, 60, 120, 300]
+
+    def __init__(self):
+        self.n, self.next = 0, 0
+
+    def due(self, now):
+        return now >= self.next
+
+    def fail(self, now):
+        d = self.STEPS[min(self.n, len(self.STEPS) - 1)]
+        self.n += 1
+        self.next = now + d
+        return d
+
+    def reset(self):
+        self.n, self.next = 0, 0
+
+
 def failsafe(cfg, fans, reason):
     log(f"FAILSAFE ({reason}): {cfg['failsafe_duty']}%")
     try:
@@ -193,16 +253,26 @@ def main():
     mmio = sum(g[3] is not None for g in gpus)
     log(f"gpu-fancontrol: {len(gpus)} GPUs, hotspot/VRAM via MMIO on {mmio}"
         f"{' (DRY RUN)' if fans.dry_run else ''}")
-    fans.connect()
-    fans.ensure_mode()
-    fans.duty = fans.current()
-    log(f"BMC '{bmc.PROFILE}' current duty {fans.duty}%")
     sd_notify("READY=1")
 
+    # BMC login with backoff. A failing daemon must not hammer the BMC: repeated failed logins
+    # lock the account (seen after a power cut: 2 logins every 5 s -> HTTP 401 for good).
+    backoff = Backoff()
     t_status = t_mode = 0
     try:
         while not stop["flag"]:
             now = time.time()
+            if fans.b is None and backoff.due(now):
+                try:
+                    fans.connect()
+                    fans.ensure_mode()
+                    fans.duty = fans.current()
+                    log(f"BMC connected; '{bmc.PROFILE}' current duty {fans.duty}%")
+                    backoff.reset()
+                except Exception as ex:
+                    fans.b = None
+                    log(f"BMC connect failed: {ex}; next try in {backoff.fail(now)} s")
+
             try:
                 temps = read_temps(gpus)
                 target, why = demand(cfg, temps)
@@ -211,27 +281,25 @@ def main():
                 log("temperature read failed:", ex)
                 temps, target, why, lower_ok = [], cfg["failsafe_duty"], "read failure", cfg["failsafe_duty"]
 
-            try:
-                cur = fans.duty
-                if target > cur and (target - cur >= cfg["min_change"] or target >= 100):
-                    fans.set(target)                                   # up: immediately
-                    log(f"duty {cur}% -> {fans.duty}% ({why})")
-                elif lower_ok <= cur - cfg["min_change"] and now - fans.t_write >= cfg["min_write_interval_s"]:
-                    fans.set(max(lower_ok, cur - cfg["max_step_down"]))  # down: slowly
-                    log(f"duty {cur}% -> {fans.duty}% ({why})")
-                if now - t_mode >= cfg["mode_check_every_s"]:
-                    fans.ensure_mode()
-                    t_mode = now
-            except Exception as ex:
-                log("BMC error:", ex)
+            if fans.b is not None:
                 try:
-                    fans.connect()
-                except Exception as ex2:
-                    log("BMC reconnect failed:", ex2)
+                    cur = fans.duty
+                    if target > cur and (target - cur >= cfg["min_change"] or target >= 100):
+                        fans.set(target)                                   # up: immediately
+                        log(f"duty {cur}% -> {fans.duty}% ({why})")
+                    elif lower_ok <= cur - cfg["min_change"] and now - fans.t_write >= cfg["min_write_interval_s"]:
+                        fans.set(max(lower_ok, cur - cfg["max_step_down"]))  # down: slowly
+                        log(f"duty {cur}% -> {fans.duty}% ({why})")
+                    if now - t_mode >= cfg["mode_check_every_s"]:
+                        fans.ensure_mode()
+                        t_mode = now
+                except Exception as ex:
+                    fans.b = None
+                    log(f"BMC error: {ex}; reconnecting in {backoff.fail(now)} s")
 
             if now - t_status >= cfg["status_every_s"]:
-                log(f"duty {fans.duty}% target {target:.0f}% ({why}) | " +
-                    " | ".join(gputemps.fmt(r) for r in temps))
+                state = f"duty {fans.duty}%" if fans.b is not None else "BMC NOT CONNECTED"
+                log(f"{state} target {target:.0f}% ({why}) | " + " | ".join(gputemps.fmt(r) for r in temps))
                 t_status = now
             sd_notify("WATCHDOG=1")
             time.sleep(cfg["interval_s"])

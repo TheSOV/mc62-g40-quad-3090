@@ -34,7 +34,11 @@ FIXED_SENSOR = 1               # CPU0_TEMP: always present; Slope [0,127] -> [D,
 HIC_SENSORS = [8, 9, 10, 11, 13]   # HIC_TEMP_0..4 (PCIe area), used as a safety net
 
 
+HOST_FILE = "/run/gpu-fancontrol/bmc_host"  # current BMC IP, written by the daemon (DHCP changes it)
+
+
 def load_env():
+    """Credentials from bmc.env. BMC_HOST is overridden by the IP the daemon last discovered."""
     for f in ENV_FILES:
         if os.path.exists(f):
             env = {}
@@ -43,6 +47,12 @@ def load_env():
                 if line and not line.startswith("#") and "=" in line:
                     k, v = line.split("=", 1)
                     env[k.strip()] = v.strip()
+            try:
+                host = open(HOST_FILE).read().strip()
+                if host:
+                    env["BMC_HOST"] = host
+            except OSError:
+                pass
             return env
     sys.exit("bmc.env not found in " + " or ".join(ENV_FILES))
 

@@ -1,0 +1,180 @@
+{
+ "strVersion": "1.00",
+ "strName": "gpufan",
+ "arrPolicy": [
+  {
+   "iPolicyType": 2,
+   "iInSDR": 1,
+   "iSensorCode": 1,
+   "iInitDuty": 40,
+   "iCpuTdp": 0,
+   "iAmbientSensor": 0,
+   "iAmbientSensorTemp": 0,
+   "arrSensor": [
+    1
+   ],
+   "arrFanSensor": [
+    189,
+    190
+   ],
+   "arrRef": [
+    0,
+    127
+   ],
+   "arrDuty": [
+    40,
+    40
+   ],
+   "arrHexVendorID": [],
+   "arrHexDeviceID": [],
+   "iPCIEDeviceEnable": 0,
+   "iHysteresis": 0
+  },
+  {
+   "iPolicyType": 2,
+   "iInSDR": 1,
+   "iSensorCode": 1,
+   "iInitDuty": 35,
+   "iCpuTdp": 0,
+   "iAmbientSensor": 0,
+   "iAmbientSensorTemp": 0,
+   "arrSensor": [
+    1
+   ],
+   "arrFanSensor": [
+    184
+   ],
+   "arrRef": [
+    45,
+    70,
+    85
+   ],
+   "arrDuty": [
+    35,
+    85,
+    100
+   ],
+   "arrHexVendorID": [],
+   "arrHexDeviceID": [],
+   "iPCIEDeviceEnable": 0,
+   "iHysteresis": 0
+  },
+  {
+   "iPolicyType": 2,
+   "iInSDR": 1,
+   "iSensorCode": 1,
+   "iInitDuty": 35,
+   "iCpuTdp": 0,
+   "iAmbientSensor": 0,
+   "iAmbientSensorTemp": 0,
+   "arrSensor": [
+    8,
+    9,
+    10,
+    11,
+    13
+   ],
+   "arrFanSensor": [
+    184
+   ],
+   "arrRef": [
+    35,
+    80
+   ],
+   "arrDuty": [
+    35,
+    100
+   ],
+   "arrHexVendorID": [],
+   "arrHexDeviceID": [],
+   "iPCIEDeviceEnable": 0,
+   "iHysteresis": 0
+  },
+  {
+   "iPolicyType": 2,
+   "iInSDR": 1,
+   "iSensorCode": 1,
+   "iInitDuty": 35,
+   "iCpuTdp": 0,
+   "iAmbientSensor": 0,
+   "iAmbientSensorTemp": 0,
+   "arrSensor": [
+    14
+   ],
+   "arrFanSensor": [
+    184
+   ],
+   "arrRef": [
+    45,
+    95
+   ],
+   "arrDuty": [
+    35,
+    100
+   ],
+   "arrHexVendorID": [],
+   "arrHexDeviceID": [],
+   "iPCIEDeviceEnable": 0,
+   "iHysteresis": 0
+  },
+  {
+   "iPolicyType": 2,
+   "iInSDR": 1,
+   "iSensorCode": 1,
+   "iInitDuty": 30,
+   "iCpuTdp": 0,
+   "iAmbientSensor": 0,
+   "iAmbientSensorTemp": 0,
+   "arrSensor": [
+    2
+   ],
+   "arrFanSensor": [
+    185
+   ],
+   "arrRef": [
+    48,
+    95
+   ],
+   "arrDuty": [
+    30,
+    100
+   ],
+   "arrHexVendorID": [],
+   "arrHexDeviceID": [],
+   "iPCIEDeviceEnable": 0,
+   "iHysteresis": 0
+  },
+  {
+   "iPolicyType": 2,
+   "iInSDR": 1,
+   "iSensorCode": 1,
+   "iInitDuty": 40,
+   "iCpuTdp": 0,
+   "iAmbientSensor": 0,
+   "iAmbientSensorTemp": 0,
+   "arrSensor": [
+    8,
+    9,
+    10,
+    11,
+    13
+   ],
+   "arrFanSensor": [
+    189,
+    190
+   ],
+   "arrRef": [
+    60,
+    75
+   ],
+   "arrDuty": [
+    40,
+    100
+   ],
+   "arrHexVendorID": [],
+   "arrHexDeviceID": [],
+   "iPCIEDeviceEnable": 0,
+   "iHysteresis": 0
+  }
+ ]
+}
