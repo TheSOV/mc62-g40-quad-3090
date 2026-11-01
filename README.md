@@ -14,6 +14,7 @@ idle, without compromising cooling.
 | Vix Loader doesn't build on Ubuntu kernel 7.0 | Needs Ubuntu's DKMS patches (CXL, dma_buf) on top of the GitHub tag | [docs/gpu-vbios-fan-floor.md](docs/gpu-vbios-fan-floor.md#4-driver-source-github-tag--ubuntus-kernel-70-patches) |
 | Case fans should follow the GPUs | `gpu-fancontrol`: a systemd daemon that sets SYS_FAN4/5 from the hottest GPU core/hotspot/VRAM, and goes to 100 % if it stops or crashes | [docs/gpu-fancontrol.md](docs/gpu-fancontrol.md) |
 | No hotspot / VRAM temperature on GeForce | NVML 615 still doesn't report them. Read BAR0 MMIO (GA102) | [tools/gputemps.py](tools/gputemps.py) |
+| How fast LLMs run on it | vLLM benchmarks: models, TP4 vs. DP2×TP2, power-limit sweep (250 W nearly free, 220 W −1 to −4 %) | [quad-3090-llm-bench](https://github.com/TheSOV/quad-3090-llm-bench) |
 
 ## Hardware
 
