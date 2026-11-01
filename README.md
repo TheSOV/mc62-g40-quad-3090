@@ -12,6 +12,7 @@ idle, without compromising cooling.
 | No way to set BMC fan duty from Linux | No `ipmitool raw` command, and Redfish OEM PUTs don't apply. The **web API** does | [docs/bmc-fans.md](docs/bmc-fans.md) |
 | RTX 3090 blower at 3330 RPM at idle | The VBIOS fan table stores a **3000 RPM minimum**. An edited image loaded **in memory** (no flashing) brings idle to **~1415 RPM** with normal ramp-up under load. Linux only | [docs/gpu-vbios-fan-floor.md](docs/gpu-vbios-fan-floor.md) |
 | Vix Loader doesn't build on Ubuntu kernel 7.0 | Needs Ubuntu's DKMS patches (CXL, dma_buf) on top of the GitHub tag | [docs/gpu-vbios-fan-floor.md](docs/gpu-vbios-fan-floor.md#4-driver-source-github-tag--ubuntus-kernel-70-patches) |
+| Case fans should follow the GPUs | `gpu-fancontrol`: a systemd daemon that sets SYS_FAN4/5 from the hottest GPU core/hotspot/VRAM, and goes to 100 % if it stops or crashes | [docs/gpu-fancontrol.md](docs/gpu-fancontrol.md) |
 | No hotspot / VRAM temperature on GeForce | NVML 615 still doesn't report them. Read BAR0 MMIO (GA102) | [tools/gputemps.py](tools/gputemps.py) |
 
 ## Hardware
@@ -30,6 +31,7 @@ All in Python 3, standard library plus `python3-pynvml` for the GPU tools.
 
 | Script | What it does |
 |---|---|
+| [`tools/gpu_fancontrol.py`](tools/gpu_fancontrol.py) | The case-fan daemon (installed by [`install.sh`](install.sh) with [`systemd/gpu-fancontrol.service`](systemd/gpu-fancontrol.service)) |
 | [`tools/bmc.py`](tools/bmc.py) | BMC web API client and CLI: `sensors`, `profiles`, `mode`, `duty` |
 | [`tools/tune_floor.py`](tools/tune_floor.py) | Finds the lowest spike-free duty, bottom-up, separately for case fans and CPU fan |
 | [`tools/spikelog.py`](tools/spikelog.py) | Logs BMC fans and marks fail-safe spikes |

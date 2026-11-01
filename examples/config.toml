@@ -1,0 +1,13 @@
+# gpu-fancontrol configuration (/etc/gpu-fancontrol/config.toml). Omitted keys use the defaults.
+
+min_duty = 40            # 750 RPM. Below ~600 RPM the BMC sends every fan to 100 %
+failsafe_duty = 100      # on stop, crash or read failure
+max_step_down = 5        # % per write when lowering
+min_write_interval_s = 10
+hysteresis_c = 3
+
+# [temperature °C, duty %], linear in between. The highest demand among all GPUs and sensors wins.
+[curves]
+core    = [[55, 40], [60, 55], [70, 80], [78, 100]]
+hotspot = [[65, 40], [80, 60], [90, 100]]
+vram    = [[75, 40], [90, 70], [100, 100]]

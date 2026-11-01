@@ -1,0 +1,18 @@
+[Unit]
+Description=GPU case fan control through the BMC (SYS_FAN4/5 from GPU temperatures)
+After=network-online.target nvidia-persistenced.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+ExecStart=/usr/bin/python3 -I /opt/gpu-fancontrol/gpu_fancontrol.py
+# Stopped or crashed: leave the fans fast, not slow
+ExecStopPost=/usr/bin/python3 -I /opt/gpu-fancontrol/gpu_fancontrol.py --failsafe
+Restart=always
+RestartSec=5
+WatchdogSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
