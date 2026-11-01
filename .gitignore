@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.rom
+*.bin
+bmc.env
+*_before_tune.json
+logs/
