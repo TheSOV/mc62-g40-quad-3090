@@ -225,6 +225,21 @@ class Backoff:
         self.n, self.next = 0, 0
 
 
+TEMPS_FILE = "/run/gpu-fancontrol/temps.json"   # latest readings, for logging/benchmark tools
+
+
+def write_temps(temps, duty, target):
+    """Atomically publish the latest readings (every cycle) so tools without root can log them."""
+    try:
+        tmp = TEMPS_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"t": round(time.time(), 1), "duty": duty, "target": round(target),
+                       "gpus": [{k: r[k] for k in ("gpu", "core", "hotspot", "vram", "W")} for r in temps]}, f)
+        os.replace(tmp, TEMPS_FILE)
+    except OSError:
+        pass
+
+
 def failsafe(cfg, fans, reason):
     log(f"FAILSAFE ({reason}): {cfg['failsafe_duty']}%")
     try:
@@ -301,6 +316,7 @@ def main():
                 state = f"duty {fans.duty}%" if fans.b is not None else "BMC NOT CONNECTED"
                 log(f"{state} target {target:.0f}% ({why}) | " + " | ".join(gputemps.fmt(r) for r in temps))
                 t_status = now
+            write_temps(temps, fans.duty if fans.b is not None else None, target)
             sd_notify("WATCHDOG=1")
             time.sleep(cfg["interval_s"])
     finally:

@@ -12,9 +12,13 @@ GPU still protects itself.
 
 | Sensor | Curve (°C → duty %) |
 |---|---|
-| Core | 55 → 40, 60 → 55, 70 → 80, 78 → 100 |
-| Hotspot | 65 → 40, 80 → 60, 90 → 100 |
-| GDDR6X | 75 → 40, 90 → 70, 100 → 100 |
+| Core | 55 → 40, 60 → 55, 68 → 80, 74 → 100 |
+| Hotspot | 65 → 40, 75 → 60, 85 → 100 |
+| GDDR6X | 75 → 40, 85 → 70, 92 → 100 |
+
+  Full speed comes well before the limits (GDDR6X throttles around 110 °C): under load the only cost
+  is noise. An earlier curve (100 % at hotspot 90 / VRAM 100 °C) let the case fans drop to ~80–88 %
+  with VRAM at 90 °C.
 
 - It writes the fixed duty of the BMC profile `gpufan` (see [bmc-fans.md](bmc-fans.md)).
   **Minimum 40 % (750 RPM)**: at ~600 RPM the BMC fail-safe sends every fan to 100 %.
@@ -24,6 +28,9 @@ GPU still protects itself.
   so DHCP changes don't matter. `BMC_HOST` in `bmc.env` is only a fallback, and the password is never
   sent to an old address that may now belong to another device. The current IP is written to
   `/run/gpu-fancontrol/bmc_host`, which `tools/bmc.py` reads.
+- Every cycle it also writes the latest readings to `/run/gpu-fancontrol/temps.json` (duty, target, and
+  core/hotspot/VRAM/W per GPU), so tools running without root can log hotspot and VRAM, for example
+  during a benchmark.
 
 ## Surviving a BMC factory reset (power cut)
 

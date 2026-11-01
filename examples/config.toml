@@ -8,6 +8,6 @@ hysteresis_c = 3
 
 # [temperature °C, duty %], linear in between. The highest demand among all GPUs and sensors wins.
 [curves]
-core    = [[55, 40], [60, 55], [70, 80], [78, 100]]
-hotspot = [[65, 40], [80, 60], [90, 100]]
-vram    = [[75, 40], [90, 70], [100, 100]]
+core    = [[55, 40], [60, 55], [68, 80], [74, 100]]
+hotspot = [[65, 40], [75, 60], [85, 100]]
+vram    = [[75, 40], [85, 70], [92, 100]]
