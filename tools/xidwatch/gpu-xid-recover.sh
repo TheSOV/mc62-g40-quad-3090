@@ -60,8 +60,8 @@ if [ $rc = 0 ]; then
   if verify; then
     notify "RESET OK: $TARGETS recovered without a reboot. $(timeout 20 nvidia-smi --query-gpu=pci.bus_id,pstate,temperature.gpu,power.draw,fan.speed --format=csv,noheader | tr '\n' ';')"
     echo "$(date +%s) $BUS reset-ok" >>"$STATE/history"
-    # Follow-up: is inference back and are the GPUs still fine after 20 min?
-    ( sleep 1200; log "follow-up +20 min: $VLLM_UNIT=$(systemctl is-active "$VLLM_UNIT"); $(timeout 20 nvidia-smi --query-gpu=index,pci.bus_id,pstate,temperature.gpu,power.draw,memory.used --format=csv,noheader | tr '\n' ';')" ) &
+    # Follow-up: is inference back and are the GPUs still fine after 20 min? (closes fd 9: does not hold the lock)
+    ( exec 9>&-; sleep 1200; log "follow-up +20 min: $VLLM_UNIT=$(systemctl is-active "$VLLM_UNIT"); $(timeout 20 nvidia-smi --query-gpu=index,pci.bus_id,pstate,temperature.gpu,power.draw,memory.used --format=csv,noheader | tr '\n' ';')" ) &
     exit 0
   fi
 fi
