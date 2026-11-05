@@ -10,7 +10,9 @@ idle, without compromising cooling.
 |---|---|---|
 | All fans jump to 100 % every few minutes | The BMC fail-safe fires when **any fan runs at ~600 RPM**, despite much lower thresholds. 750 RPM (case 40 %, CPU 35 %) is the floor here | [docs/bmc-fans.md](docs/bmc-fans.md) |
 | No way to set BMC fan duty from Linux | No `ipmitool raw` command, and Redfish OEM PUTs don't apply. The **web API** does | [docs/bmc-fans.md](docs/bmc-fans.md) |
-| RTX 3090 blower at 3330 RPM at idle | The VBIOS fan table stores a **3000 RPM minimum**. An edited image loaded **in memory** (no flashing) brings idle to **~1415 RPM** with normal ramp-up under load. Linux only | [docs/gpu-vbios-fan-floor.md](docs/gpu-vbios-fan-floor.md) |
+| RTX 3090 blower at 3330 RPM at idle | The VBIOS fan table stores a **3000 RPM minimum**. An edited image loaded **in memory** (no flashing) brings idle to **1250 RPM** with normal ramp-up under load. Linux only | [docs/gpu-vbios-fan-floor.md](docs/gpu-vbios-fan-floor.md) |
+| Blower always ~12 % above its RPM target | The generic image declares **two fans**; the second one always reads 0 RPM. With `fan_channels=1` the blower holds its target exactly | [docs/gpu-vbios-fan-floor.md](docs/gpu-vbios-fan-floor.md#the-phantom-fan-channel) |
+| One GPU dies with **Xid 62, "PMU has halted"**, usually idle | Known, unfixed driver/firmware problem (Turing to Blackwell, drivers 580–615). A **sysfs PCI reset brings the GPU back without a reboot** (reset NVLink peers too). Automatic capture + recovery + capped reboot | [docs/gpu-xid62-pmu-halt.md](docs/gpu-xid62-pmu-halt.md) |
 | Vix Loader doesn't build on Ubuntu kernel 7.0 | Needs Ubuntu's DKMS patches (CXL, dma_buf) on top of the GitHub tag | [docs/gpu-vbios-fan-floor.md](docs/gpu-vbios-fan-floor.md#4-driver-source-github-tag--ubuntus-kernel-70-patches) |
 | Case fans should follow the GPUs | `gpu-fancontrol`: a systemd daemon that sets SYS_FAN4/5 from the hottest GPU core/hotspot/VRAM, and goes to 100 % if it stops or crashes | [docs/gpu-fancontrol.md](docs/gpu-fancontrol.md) |
 | No hotspot / VRAM temperature on GeForce | NVML 615 still doesn't report them. Read BAR0 MMIO (GA102) | [tools/gputemps.py](tools/gputemps.py) |
@@ -39,6 +41,8 @@ All in Python 3, standard library plus `python3-pynvml` for the GPU tools.
 | [`tools/gputemps.py`](tools/gputemps.py) | Core (NVML), hotspot and GDDR6X (MMIO) temperatures for every GPU (root) |
 | [`tools/burn_test.py`](tools/burn_test.py) | Compute load on one GPU (PTX kernel through libcuda, no CUDA toolkit) with a temperature cutoff |
 | [`tools/gpufan_test.py`](tools/gpufan_test.py) | Manual GPU fan test through NVML (root), restores auto mode at the end |
+| [`tools/fanwatch.py`](tools/fanwatch.py) | Read-only: RPM, measured % and target % of every GPU fan |
+| [`tools/xidwatch/`](tools/xidwatch) | GPU telemetry every second, Xid watcher, diagnostic capture, automatic GPU reset / reboot ([docs](docs/gpu-xid62-pmu-halt.md#automatic-recovery-toolsxidwatch)) |
 
 BMC credentials go in `~/.config/gpu-fancontrol/bmc.env` or `/etc/gpu-fancontrol/bmc.env`
 (chmod 600). See [`examples/bmc.env.example`](examples/bmc.env.example).
@@ -52,10 +56,12 @@ python3 tools/burn_test.py 0 300 83    # GPU 0, 5 min, stop at 83 °C
 
 ## Other notes
 
-- **NVLink:** an RTX A6000 2-slot bridge between the two converted cards (PCIe5 and PCIe7, correct
-  spacing) shows every link inactive, with both the open and the proprietary driver. Still unresolved.
-  Suspects: bridge seating, or the PG132 image on a PG136 board.
-- **Power limit for inference:** planned sweep with NVIDIA GenAI-Perf / AIPerf against vLLM.
+- **NVLink:** an RTX A6000 2-slot bridge between the two converted cards (PCIe5 and PCIe7) works:
+  NV4, 4 links at 14.06 GB/s, with the PG132 image and the override. It showed every link inactive at
+  first because **the protective plastic cap was still on the card's NVLink connector**. vLLM with
+  NCCL P2P over NVLink only (`NCCL_P2P_LEVEL=NVL`) and the bridged pair inside each TP group:
+  +5–15 % prefill and multi-user throughput.
+- **Power limit for inference:** 220 W on all four (see the benchmark repo).
 
 ## Disclaimer
 

@@ -1,0 +1,13 @@
+[Unit]
+Description=Watch NVIDIA Xids: capture diagnostics, recover the GPU (/var/log/gpu-xid)
+After=systemd-journald.service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/gpu-xidwatch/gpu_xidwatch.py
+Restart=always
+RestartSec=5
+# Captures and recoveries keep running if the watcher restarts
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

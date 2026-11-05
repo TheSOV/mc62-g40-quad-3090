@@ -1,0 +1,12 @@
+[Unit]
+Description=Disarm the BMC watchdog that gpu-xid-recover arms before a reboot, and log the boot
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+ExecStartPre=-/sbin/modprobe ipmi_devintf
+ExecStart=/usr/bin/ipmitool mc watchdog off
+ExecStartPost=/bin/sh -c 'mkdir -p /var/log/gpu-xid; echo "$(date "+%%F %%T") [system] watchdog-off service ran (boot or manual start)" >> /var/log/gpu-xid/recovery.log'
+
+[Install]
+WantedBy=multi-user.target

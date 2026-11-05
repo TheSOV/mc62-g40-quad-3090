@@ -1,0 +1,11 @@
+# /etc/default/gpu-xid-recover: settings for gpu-xid-recover.sh, gpu-reset-one.sh and gpu-xid-capture.sh
+AUTO_RECOVER=1        # 0 = capture only, no reset
+AUTO_REBOOT=1         # 0 = if the reset fails, do not reboot (just warn)
+MAX_REBOOTS_24H=2     # cap on automatic reboots per 24 h (avoids loops)
+WATCHDOG_MIN=20       # BMC watchdog: hard reset if the reboot has not completed in N min
+RESET_ALL=1           # 1 = reset all GPUs together (recommended with NVLink and a TP/PP model on all of them)
+NVLINK_GROUPS="0000:01:00,0000:41:00"   # only if RESET_ALL=0: NVLink-bridged GPUs, reset together
+VLLM_UNIT=flashnext   # inference unit: its log goes into the capture
+# Services stopped before the reset (everything holding /dev/nvidia*) and started afterwards
+STOP_SERVICES="flashnext gpu-telemetry gpu-fancontrol gpu-power-limit.timer nvidia-persistenced"
+START_SERVICES="nvidia-persistenced gpu-power-limit.timer gpu-power-limit.service gpu-fancontrol gpu-telemetry flashnext"

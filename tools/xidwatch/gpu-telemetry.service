@@ -1,0 +1,12 @@
+[Unit]
+Description=GPU telemetry every 1 s (/var/log/gpu-telemetry)
+After=nvidia-persistenced.service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/lib/gpu-xidwatch/gpu_telemetry.py
+Restart=always
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
