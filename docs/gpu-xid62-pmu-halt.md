@@ -29,6 +29,9 @@ Card A (`29daefaf`) and card B (`25a0c115`) are the two converted blowers, each 
 | 2 | 11-04 03:38 | 01:00 | B | same | idle, load ended 67 min before |
 | 3 | 11-04 22:29 | 41:00 | B | same, cards swapped between slots | idle, load ended 50 min before |
 | 4 | 11-05 00:46 | 41:00 | B | `fan_channels=1`, floor 1250 | **19 s after a load ended** |
+| 5 | 11-18 05:44 | 41:00 | B | same | 16 s after a load ended (P2 → P5) |
+| 6 | 11-18 06:09 | 41:00 | B | same | 16 s after a load ended, 22 min after boot |
+| 7 | 11-18 16:31 | 41:00 | B | same | 16 s after a load ended |
 
 - **The failure follows the card**, not the slot: after swapping cards A and B, it moved with B.
 - **The payload is identical every time**, byte for byte.
@@ -41,6 +44,37 @@ Card A (`29daefaf`) and card B (`25a0c115`) are the two converted blowers, each 
   Occurrences 2 and 3, though, were in steady P8 with no transition in the 1 s telemetry.
 - The same cards ran for months on a Supermicro H11SSL-i (PCIe 3.0) with Windows and the Game Ready
   driver, with the stock VBIOS, and never failed.
+
+## Inference, not training, and a precursor (2026-11-18)
+
+From the 1 s telemetry of 11-11 to 11-18 and the captures
+([`tools/xidwatch/analysis`](../tools/xidwatch/analysis)):
+
+- **All seven occurrences had an inference server (vLLM) holding ~23 GB on card B.** None in ~12
+  days of fine-tuning in between, with a similar number of load → idle transitions.
+- **Occurrences 5-7 were not at idle.** Sustained 99 % load, the load ends, ~16 s idle in P2 at
+  1695 MHz, and the PMU halts exactly on the P2 → P5 drop, the step where the memory clock goes from
+  9501 to 810 MHz. That drop happened 61 times in those 8 days, on training days too; it is the moment
+  of failure, not the cause. The clock spike at the end of a load (~1920 MHz) is normal and is not it.
+- **Precursor:** 10-50 min before each of occurrences 5-7, card B reported SW power cap
+  (`clocks_event_reasons` bit `0x4`) while drawing 150-190 W under a 220 W limit, with the other three
+  cards at 210-220 W on the same work (power ratio 0.79-0.88). Idle P2 power also fell to 75-108 W
+  instead of ~121 W. Temperatures were normal (core 64-68 °C, VRAM 74-82 °C). In 708 ten-minute
+  windows it shows up only before these failures. Our reading: the PMU's power management misbehaves
+  before the PMU halts.
+- **Detector:** [`gpu_precursor.py`](../tools/xidwatch/gpu_precursor.py), run inside
+  `gpu_telemetry.py`. With all GPUs at ≥ 90 %, a sample is suspect if a GPU has SW power cap and draws
+  under 0.9 × the mean of the others; it alerts (journal tag `gpu-precursor`, `wall`,
+  `/var/log/gpu-xid/precursor.log`, plus `nvidia-smi -q -d POWER,CLOCK,PERFORMANCE,VOLTAGE`) when ≥ 30 %
+  of the last 10 min are suspect. Replayed over 11-11 to 11-18 it fires 1.5, 13 and 8.5 min before
+  occurrences 5-7, with no false positives (at 15-20 % it also fires on an uneven training load). Replay:
+  `python3 gpu_precursor.py /var/log/gpu-telemetry/*.csv*`.
+- **Power limit:** the 220 W limit and the VBIOS override arrived on the same day (11-01), and there was
+  no Xid before; the two cannot be separated with this data. Under load card B sits at the limit
+  100 % of the time and the precursor is a limiter fault, so since 11-18 18:03 card B alone runs at 260 W
+  (`WATTS_BY_UUID` in the power-limit script of
+  [quad-3090-llm-bench](https://github.com/TheSOV/quad-3090-llm-bench)). Under sustained load: 231-260 W,
+  core 65-68 °C, VRAM 76-82 °C, the same VRAM as at 220 W.
 
 ## Other people with the same problem
 
@@ -118,7 +152,9 @@ off for a minute (see #1473).
 | `gpu-reset-one.sh` | The sysfs reset, for one or more GPUs; dry run without `--yes` |
 | `gpu-bmc-watchdog-off.service` | Disarms the BMC watchdog at boot |
 | `gpu-xid-report.sh` | Summary: recoveries, Xids across all saved boots, boots, captures |
-| `gpu-xid-recover.default` | `/etc/default/gpu-xid-recover`: on/off switches, reboot cap, services to stop and start |
+| `gpu-xid-recover.default` | `/etc/default/gpu-xid-recover`: on/off switches, reboot cap, services to stop and start. List the unit that launches vLLM: if vLLM is a child of another unit that is not listed, the reset aborts |
+| `gpu_precursor.py` | Precursor detector fed by `gpu_telemetry.py` (see above) |
+| `analysis/` | Scripts over the saved telemetry: states per day, load → idle drops, features of each drop, power ratio between cards, clock spike at load end |
 
 ```bash
 sudo tools/xidwatch/install.sh
@@ -132,7 +168,13 @@ has no `/dev/watchdog`.
 
 ## Still open
 
-- Whether the converted cards' generic PG132 image (or the override) plays a part. Next test: lock a
-  minimum clock on card B (`nvidia-smi -lgc`) so it never drops to P8, then, if needed, remove the
-  override from card B only.
+- Whether the converted cards' generic PG132 image (or the override) plays a part. Removing the
+  override is not an option here (the stock fan curve is too loud).
+- Whether 260 W on card B reduces the failures: observing for a few days from 11-18.
+- If it does not: a stepped memory-clock descent. Card B supports memory clocks of 405, 810, 5001,
+  9501 and 9751 MHz (5001 never shows up in the telemetry). A service would raise the floor while the card is
+  busy (`nvidia-smi -lmc 9501,9751`) and step down at idle (`-lmc 5001,9751` → `-lmc 810,9751` →
+  `-rmc`) instead of the direct 9501 → 810 drop. Locking clocks permanently (`-lgc`) was rejected:
+  ~120 W per card at idle.
+- After the timeout fix, the automatic recovery path has not yet run on a real Xid.
 - Sending the nvlog to NVIDIA (#1307 or linux-bugs@nvidia.com): there is no confirmed Ampere case there.

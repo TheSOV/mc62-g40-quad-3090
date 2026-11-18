@@ -26,7 +26,11 @@ for b in "${BUSES[@]}"; do [ -e /sys/bus/pci/devices/$b.0 ] || { echo "no such d
 mkdir -p /var/log/gpu-xid; exec > >(tee "$LOG") 2>&1
 
 step() { echo; echo "== $*"; }
-do_() { echo "+ $*"; [ "$GO" = --yes ] && { timeout 90 bash -c "$*"; r=$?; [ $r = 124 ] && { echo "!! hung for 90 s: reboot or power cycle from the BMC"; exit 2; }; return $r; }; return 0; }
+# STEP_TIMEOUT: seconds before a step counts as hung. Stopping the services gets more: a unit that stops
+# several children in order can take minutes; on 2026-11-18 a 90 s limit aborted the reset while such a
+# unit was still stopping cleanly.
+STEP_TIMEOUT=90
+do_() { echo "+ $*"; [ "$GO" = --yes ] && { timeout "$STEP_TIMEOUT" bash -c "$*"; r=$?; [ $r = 124 ] && { echo "!! hung for $STEP_TIMEOUT s: reboot or power cycle from the BMC"; exit 2; }; return $r; }; return 0; }
 
 step "State before: ${BUSES[*]}"
 for b in "${BUSES[@]}"; do
@@ -38,7 +42,7 @@ done
 [ "$GO" = --yes ] || echo "(DRY RUN: add --yes to do it)"
 
 step "Stop everything that uses the GPUs"
-do_ "systemctl stop $STOP_SERVICES"
+STEP_TIMEOUT=300 do_ "systemctl stop $STOP_SERVICES"
 busy=$(fuser /dev/nvidia* 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$' | sort -un | paste -sd,)
 [ -n "$busy" ] && { echo "Processes still using the GPUs:"; ps -o pid,user,cmd -p "$busy" | cut -c1-120; [ "$GO" = --yes ] && { echo "Stopping here."; exit 1; }; }
 

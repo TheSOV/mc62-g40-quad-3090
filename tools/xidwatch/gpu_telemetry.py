@@ -6,6 +6,11 @@ gzips previous days and keeps KEEP_DAYS days.
 """
 import datetime, glob, gzip, os, shutil, subprocess, sys, time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gpu_precursor  # noqa: E402
+
+PRECURSOR_DIR = os.environ.get("GPU_PRECURSOR_DIR", "/var/log/gpu-xid")
+
 OUT = os.environ.get("GPU_TELEMETRY_DIR", "/var/log/gpu-telemetry")
 KEEP_DAYS = int(os.environ.get("GPU_TELEMETRY_KEEP_DAYS", "7"))
 INTERVAL = os.environ.get("GPU_TELEMETRY_INTERVAL", "1")
@@ -26,8 +31,28 @@ def housekeeping(today):
             os.remove(f)
 
 
+def on_precursor(event):
+    """Log a precursor event (gpu_precursor.py) and, on an alert, save `nvidia-smi -q` of power, clocks,
+    performance and voltage of all GPUs next to it, to compare the suspect card with its siblings."""
+    msg = (f"{event.kind.upper()} {event.bus}: SW power cap at low power in {event.share:.0%} of the last "
+           f"{gpu_precursor.WINDOW_S // 60} min busy samples (power vs siblings {event.ratio:.2f})")
+    if event.kind == "alert":
+        msg += "; Xid 62 seen 2-15 min after this on 2026-11-18"
+    os.makedirs(PRECURSOR_DIR, exist_ok=True)
+    with open(os.path.join(PRECURSOR_DIR, "precursor.log"), "a") as fh:
+        fh.write(f"{event.at} {msg}\n")
+    subprocess.Popen(["logger", "-t", "gpu-precursor", "-p", "user.warning", msg])
+    if event.kind == "alert":
+        subprocess.Popen(["wall", f"gpu-precursor: {msg}"], stderr=subprocess.DEVNULL)
+        snap = os.path.join(PRECURSOR_DIR, f"precursor-{event.at:%Y%m%d-%H%M%S}-{event.bus.replace(':', '_')}.txt")
+        with open(snap, "w") as fh:
+            subprocess.Popen(["timeout", "30", "nvidia-smi", "-q", "-d", "POWER,CLOCK,PERFORMANCE,VOLTAGE"],
+                             stdout=fh, stderr=subprocess.STDOUT)
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
+    detector = gpu_precursor.Detector()
     proc = subprocess.Popen(["nvidia-smi", f"--query-gpu={FIELDS}", "--format=csv,noheader", "-l", INTERVAL],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     day, fh = None, None
@@ -44,6 +69,11 @@ def main():
                 fh.write(FIELDS + "\n")
             day = today
         fh.write(line)
+        try:  # the detector must never stop the telemetry
+            for event in detector.feed(line):
+                on_precursor(event)
+        except Exception as error:  # noqa: BLE001
+            print(f"gpu_precursor: {type(error).__name__}: {error}", file=sys.stderr)
     sys.exit(proc.wait() or 1)  # if nvidia-smi exits, systemd restarts us
 
 
